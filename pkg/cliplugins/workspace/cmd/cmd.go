@@ -18,6 +18,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -88,11 +90,15 @@ func New(streams genericclioptions.IOStreams) (*cobra.Command, error) {
 
 		return kubeconfig.UseWorkspace(cmd.Context(), arg)
 	}
+	cliName := "kubectl"
+	if path.Base(os.Args[0]) == "kubectl-kcp" {
+		cliName = "kubectl kcp"
+	}
 	cmd := &cobra.Command{
 		Aliases:          []string{"ws", "workspaces"},
 		Use:              "workspace [create|create-context|use|current|<workspace>|..|.|-|~|<root:absolute:workspace>]",
 		Short:            "Manages KCP workspaces",
-		Example:          fmt.Sprintf(workspaceExample, "kubectl kcp"),
+		Example:          fmt.Sprintf(workspaceExample, cliName),
 		SilenceUsage:     true,
 		TraverseChildren: true,
 		RunE:             useRunE,
