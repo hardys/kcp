@@ -150,6 +150,7 @@ routed based on paths.`,
 			if err != nil {
 				return err
 			}
+			handler = withRateLimitAuthenticatedUser(handler)
 			failedHandler := newUnauthorizedHandler()
 			handler = withOptionalClientCert(handler, failedHandler, authenticationInfo.Authenticator)
 
