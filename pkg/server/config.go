@@ -18,9 +18,13 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
+	"net/url"
 
 	kcpapiextensionsclientset "github.com/kcp-dev/apiextensions-apiserver/pkg/client/clientset/versioned"
 	kcpapiextensionsinformers "github.com/kcp-dev/apiextensions-apiserver/pkg/client/informers/externalversions"
@@ -324,6 +328,37 @@ func NewConfig(opts *kcpserveroptions.CompletedOptions) (*Config, error) {
 		return nil, err
 	}
 
+	var shardVirtualWorkspaceURL *url.URL
+	if !opts.Virtual.Enabled && opts.Extra.ShardVirtualWorkspaceURL != "" {
+		shardVirtualWorkspaceURL, err = url.Parse(opts.Extra.ShardVirtualWorkspaceURL)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var virtualWorkspaceServerProxyTransport http.RoundTripper
+	if opts.Extra.ShardClientCertFile != "" && opts.Extra.ShardClientKeyFile != "" && opts.Extra.ShardVirtualWorkspaceCAFile != "" {
+		caCert, err := ioutil.ReadFile(opts.Extra.ShardVirtualWorkspaceCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA file %q: %w", opts.Extra.ShardVirtualWorkspaceCAFile, err)
+		}
+
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+
+		cert, err := tls.LoadX509KeyPair(opts.Extra.ShardClientCertFile, opts.Extra.ShardClientKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate %q or key %q: %w", opts.Extra.ShardClientCertFile, opts.Extra.ShardClientKeyFile, err)
+		}
+
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			RootCAs:      caCertPool,
+		}
+		virtualWorkspaceServerProxyTransport = transport
+	}
+
 	// preHandlerChainMux is called before the actual handler chain. Note that BuildHandlerChainFunc below
 	// is called multiple times, but only one of the handler chain will actually be used. Hence, we wrap it
 	// to give handlers below one mux.Handle func to call.
@@ -350,6 +385,13 @@ func NewConfig(opts *kcpserveroptions.CompletedOptions) (*Config, error) {
 				opts.HomeWorkspaces.BucketLevels,
 				opts.HomeWorkspaces.BucketSize,
 			)
+		}
+
+		// Only include this when the virtual workspace server is external
+		if shardVirtualWorkspaceURL != nil && virtualWorkspaceServerProxyTransport != nil {
+			// Note: this has to come after DefaultBuildHandlerChainBeforeAuthz because it needs the user info, which
+			// is only available after DefaultBuildHandlerChainBeforeAuthz.
+			apiHandler = WithVirtualWorkspacesProxy(apiHandler, shardVirtualWorkspaceURL, virtualWorkspaceServerProxyTransport)
 		}
 
 		apiHandler = genericapiserver.DefaultBuildHandlerChainBeforeAuthz(apiHandler, genericConfig)
