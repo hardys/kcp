@@ -93,6 +93,7 @@ routed based on paths.`,
 			if err != nil {
 				return err
 			}
+			prepared.Handler = withRateLimitAuthenticatedUser(prepared.Handler)
 			return prepared.Run(ctx)
 		},
 	}
