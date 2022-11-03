@@ -29,8 +29,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/authentication/user"
 	genericapiserver "k8s.io/apiserver/pkg/server"
+	"k8s.io/klog/v2"
 
 	"github.com/kcp-dev/kcp/cmd/sharded-test-server/third_party/library-go/crypto"
+	shard "github.com/kcp-dev/kcp/cmd/test-server/kcp"
 	"github.com/kcp-dev/kcp/pkg/authorization/bootstrap"
 )
 
@@ -144,22 +146,19 @@ func start(proxyFlags, shardFlags []string, logDirPath, workDirPath string, numb
 	}
 
 	standaloneVW := sets.NewString(shardFlags...).Has("--run-virtual-workspaces=false")
-	if standaloneVW {
-		shardFlags = append(shardFlags, fmt.Sprintf("--shard-virtual-workspace-url=https://%s:7444", hostIP))
-	}
 
 	// start shards
+	var shards []*shard.Shard
 	shardsErrCh := make(chan shardErrTuple)
 	for i := 0; i < numberOfShards; i++ {
-		shardErrCh, err := startShard(ctx, i, shardFlags, servingCA, hostIP.String(), logDirPath, workDirPath)
+		shard, err := newShard(ctx, i, shardFlags, standaloneVW, servingCA, hostIP.String(), logDirPath, workDirPath, clientCA)
 		if err != nil {
 			return err
 		}
-		go func(shardIndex int, shardErrCh <-chan error) {
-			err := <-shardErrCh
-			shardsErrCh <- shardErrTuple{shardIndex, err}
-
-		}(i, shardErrCh)
+		if err := shard.Start(ctx); err != nil {
+			return err
+		}
+		shards = append(shards, shard)
 	}
 
 	// write kcp-admin kubeconfig talking to the front-proxy with a client-cert
@@ -174,7 +173,7 @@ func start(proxyFlags, shardFlags []string, logDirPath, workDirPath string, numb
 		vwPort = "7444"
 
 		for i := 0; i < numberOfShards; i++ {
-			virtualWorkspaceErrCh, err := startVirtual(ctx, i, logDirPath, workDirPath)
+			virtualWorkspaceErrCh, err := startVirtual(ctx, i, servingCA, hostIP.String(), logDirPath, workDirPath, clientCA)
 			if err != nil {
 				return fmt.Errorf("error starting virtual workspaces server %d: %w", i, err)
 			}
@@ -188,6 +187,17 @@ func start(proxyFlags, shardFlags []string, logDirPath, workDirPath string, numb
 	// start front-proxy
 	if err := startFrontProxy(ctx, proxyFlags, servingCA, hostIP.String(), logDirPath, workDirPath, vwPort); err != nil {
 		return err
+	}
+
+	for i, shard := range shards {
+		terminatedCh, err := shard.WaitForReady(ctx)
+		if err != nil {
+			return err
+		}
+		go func(i int, terminatedCh <-chan error) {
+			err := <-terminatedCh
+			shardsErrCh <- shardErrTuple{i, err}
+		}(i, terminatedCh)
 	}
 
 	select {

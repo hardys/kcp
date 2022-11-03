@@ -36,7 +36,12 @@ func TestAuditLogs(t *testing.T) {
 	t.Parallel()
 	framework.Suite(t, "control-plane")
 
-	server := framework.PrivateKcpServer(t, framework.WithCustomArguments([]string{"--audit-log-path", "./audit-log", "--audit-policy-file", "./policy.yaml"}...))
+	server := framework.PrivateKcpServer(t,
+		framework.PrivateKcpServerArgs(
+			"--audit-log-path", "./audit-log",
+			"--audit-policy-file", "./policy.yaml",
+		),
+	)
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 

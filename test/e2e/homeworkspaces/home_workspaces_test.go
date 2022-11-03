@@ -151,7 +151,12 @@ func TestUserHomeWorkspaces(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			tokenAuthFile := framework.WriteTokenAuthFile(t)
-			server := framework.PrivateKcpServer(t, framework.WithCustomArguments(append(framework.TestServerArgsWithTokenAuthFile(tokenAuthFile), testCase.kcpArgs...)...))
+			server := framework.PrivateKcpServer(t,
+				framework.PrivateKcpServerArgs(
+					append(framework.TestServerArgsWithTokenAuthFile(tokenAuthFile), testCase.kcpArgs...)...,
+				),
+			)
+
 			ctx, cancelFunc := context.WithCancel(context.Background())
 			t.Cleanup(cancelFunc)
 
