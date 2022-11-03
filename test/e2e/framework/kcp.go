@@ -97,23 +97,41 @@ type kcpFixture struct {
 
 // PrivateKcpServer returns a new kcp server fixture managing a new
 // server process that is not intended to be shared between tests.
-func PrivateKcpServer(t *testing.T, options ...KcpConfigOption) RunningServer {
+func PrivateKcpServer(t *testing.T, opts ...PrivateKcpServerOption) RunningServer {
 	serverName := "main"
 
-	cfg := &kcpConfig{Name: serverName}
-	for _, opt := range options {
-		cfg = opt(cfg)
+	c := kcpConfig{
+		Name: serverName,
 	}
 
-	if len(cfg.ArtifactDir) == 0 || len(cfg.DataDir) == 0 {
-		artifactDir, dataDir, err := ScratchDirs(t)
-		require.NoError(t, err, "failed to create scratch dirs: %v", err)
-		cfg.ArtifactDir = artifactDir
-		cfg.DataDir = dataDir
+	for _, o := range opts {
+		o(&c)
 	}
 
-	f := newKcpFixture(t, *cfg)
+	f := newKcpFixture(t, c)
 	return f.Servers[serverName]
+}
+
+type PrivateKcpServerOption func(c *kcpConfig)
+
+func PrivateKcpServerArgs(args ...string) PrivateKcpServerOption {
+	return func(c *kcpConfig) {
+		c.Args = args
+	}
+}
+
+func PrivateKcpServerSkipReadyCheck(skip bool) PrivateKcpServerOption {
+	return func(c *kcpConfig) {
+		c.SkipReadyCheck = skip
+	}
+}
+
+// PrivateWithScratchDirectories adds custom scratch directories to a kcp configuration
+func PrivateWithScratchDirectories(artifactDir, dataDir string) PrivateKcpServerOption {
+	return func(c *kcpConfig) {
+		c.ArtifactDir = artifactDir
+		c.DataDir = dataDir
+	}
 }
 
 // SharedKcpServer returns a kcp server fixture intended to be shared
@@ -192,6 +210,10 @@ func newKcpFixture(t *testing.T, cfgs ...kcpConfig) *kcpFixture {
 		err := srv.Run(opts...)
 		require.NoError(t, err)
 
+		if cfgs[i].SkipReadyCheck {
+			wg.Done()
+			continue
+		}
 		// Wait for the server to become ready
 		go func(s *kcpServer, i int) {
 			defer wg.Done()
@@ -231,19 +253,11 @@ type RunningServer interface {
 	BaseConfig(t *testing.T) *rest.Config
 	RootShardSystemMasterBaseConfig(t *testing.T) *rest.Config
 	Artifact(t *testing.T, producer func() (runtime.Object, error))
+	Ready(keepMonitoring bool) error
 }
 
 // KcpConfigOption a function that wish to modify a given kcp configuration
 type KcpConfigOption func(*kcpConfig) *kcpConfig
-
-// WithScratchDirectories adds custom scratch directories to a kcp configuration
-func WithScratchDirectories(artifactDir, dataDir string) KcpConfigOption {
-	return func(cfg *kcpConfig) *kcpConfig {
-		cfg.ArtifactDir = artifactDir
-		cfg.DataDir = dataDir
-		return cfg
-	}
-}
 
 // WithCustomArguments applies provided arguments to a given kcp configuration
 func WithCustomArguments(args ...string) KcpConfigOption {
@@ -262,8 +276,9 @@ type kcpConfig struct {
 	ArtifactDir string
 	DataDir     string
 
-	LogToConsole bool
-	RunInProcess bool
+	LogToConsole   bool
+	RunInProcess   bool
+	SkipReadyCheck bool
 }
 
 // kcpServer exposes a kcp invocation to a test and
@@ -282,7 +297,8 @@ type kcpServer struct {
 	cfg            clientcmd.ClientConfig
 	kubeconfigPath string
 
-	t *testing.T
+	t          *testing.T
+	listenPort string
 }
 
 func newKcpServer(t *testing.T, cfg kcpConfig, artifactDir, dataDir string) (*kcpServer, error) {
@@ -328,7 +344,12 @@ func newKcpServer(t *testing.T, cfg kcpConfig, artifactDir, dataDir string) (*kc
 		artifactDir: artifactDir,
 		t:           t,
 		lock:        &sync.Mutex{},
+		listenPort:  kcpListenPort,
 	}, nil
+}
+
+func (k *kcpServer) ListenPort() string {
+	return k.listenPort
 }
 
 type runOptions struct {
@@ -915,6 +936,10 @@ func (s *unmanagedKCPServer) RootShardSystemMasterBaseConfig(t *testing.T) *rest
 
 func (s *unmanagedKCPServer) Artifact(t *testing.T, producer func() (runtime.Object, error)) {
 	artifact(t, s, producer)
+}
+
+func (s *unmanagedKCPServer) Ready(keepMonitoring bool) error {
+	return nil
 }
 
 func NoGoRunEnvSet() bool {
