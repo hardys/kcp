@@ -52,6 +52,7 @@ func WithOptionalAuthentication(handler, failed http.Handler, auth authenticator
 			failed.ServeHTTP(w, req)
 			return
 		}
+		klog.Infof("SHDEBUG authenticated %v", resp.User.GetName())
 		req = req.WithContext(request.WithUser(req.Context(), resp.User))
 		handler.ServeHTTP(w, req)
 	})

@@ -108,6 +108,8 @@ func (s preparedServer) Run(ctx context.Context) error {
 	s.KcpSharedInformerFactory.WaitForCacheSync(ctx.Done())
 
 	// start the server
+	go frontproxyfilters.CleanupLimiters()
+	s.Handler = frontproxyfilters.WithRateLimitAuthenticatedUser(s.Handler)
 	failedHandler := frontproxyfilters.NewUnauthorizedHandler()
 	s.Handler = frontproxyfilters.WithOptionalAuthentication(
 		s.Handler,
