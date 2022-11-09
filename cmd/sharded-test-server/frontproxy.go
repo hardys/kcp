@@ -42,23 +42,36 @@ import (
 	"github.com/kcp-dev/kcp/test/e2e/framework"
 )
 
-func startFrontProxy(
-	ctx context.Context,
-	args []string,
-	servingCA *crypto.CA,
-	hostIP string,
-	logDirPath, workDirPath string,
-	vwPort string,
-) error {
+type headWriter interface {
+	io.Writer
+	StopOut()
+}
+
+type FrontProxy struct {
+	workDirPath  string
+	logDirPath   string
+	args         []string
+	servingCA    *crypto.CA
+	hostIP       string
+	terminatedCh <-chan error
+	writer       headWriter
+}
+
+func NewFrontProxy(args []string, servingCA *crypto.CA, hostIP, workDirPath, logDirPath string) *FrontProxy {
+	return &FrontProxy{
+		args:        args,
+		servingCA:   servingCA,
+		hostIP:      hostIP,
+		workDirPath: workDirPath,
+		logDirPath:  logDirPath,
+	}
+}
+
+func (p *FrontProxy) start(ctx context.Context, vwPort string) error {
 	blue := color.New(color.BgGreen, color.FgBlack).SprintFunc()
-	inverse := color.New(color.BgHiWhite, color.FgGreen).SprintFunc()
 	out := lineprefix.New(
 		lineprefix.Prefix(blue(" PROXY ")),
 		lineprefix.Color(color.New(color.FgHiGreen)),
-	)
-	successOut := lineprefix.New(
-		lineprefix.Prefix(inverse(" PROXY ")),
-		lineprefix.Color(color.New(color.FgHiWhite)),
 	)
 
 	logger := klog.FromContext(ctx)
@@ -76,17 +89,17 @@ func startFrontProxy(
 			Path: "/services/",
 			// TODO: support multiple virtual workspace backend servers
 			Backend:         fmt.Sprintf("https://localhost:%s", vwPort),
-			BackendServerCA: filepath.Join(workDirPath, ".kcp/serving-ca.crt"),
-			ProxyClientCert: filepath.Join(workDirPath, ".kcp-front-proxy/requestheader.crt"),
-			ProxyClientKey:  filepath.Join(workDirPath, ".kcp-front-proxy/requestheader.key"),
+			BackendServerCA: filepath.Join(p.workDirPath, ".kcp/serving-ca.crt"),
+			ProxyClientCert: filepath.Join(p.workDirPath, ".kcp-front-proxy/requestheader.crt"),
+			ProxyClientKey:  filepath.Join(p.workDirPath, ".kcp-front-proxy/requestheader.key"),
 		},
 		{
 			Path: "/clusters/",
 			// TODO: support multiple shard backend servers
 			Backend:         "https://localhost:6444",
-			BackendServerCA: filepath.Join(workDirPath, ".kcp/serving-ca.crt"),
-			ProxyClientCert: filepath.Join(workDirPath, ".kcp-front-proxy/requestheader.crt"),
-			ProxyClientKey:  filepath.Join(workDirPath, ".kcp-front-proxy/requestheader.key"),
+			BackendServerCA: filepath.Join(p.workDirPath, ".kcp/serving-ca.crt"),
+			ProxyClientCert: filepath.Join(p.workDirPath, ".kcp-front-proxy/requestheader.crt"),
+			ProxyClientKey:  filepath.Join(p.workDirPath, ".kcp-front-proxy/requestheader.key"),
 		},
 	}
 
@@ -100,7 +113,7 @@ func startFrontProxy(
 	}
 
 	// write root shard kubeconfig
-	configLoader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: filepath.Join(workDirPath, ".kcp-0/admin.kubeconfig")}, nil)
+	configLoader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: filepath.Join(p.workDirPath, ".kcp-0/admin.kubeconfig")}, nil)
 	raw, err := configLoader.RawConfig()
 	if err != nil {
 		return err
@@ -109,40 +122,40 @@ func startFrontProxy(
 	if err := clientcmdapi.MinifyConfig(&raw); err != nil {
 		return err
 	}
-	if err := clientcmd.WriteToFile(raw, filepath.Join(workDirPath, ".kcp/root.kubeconfig")); err != nil {
+	if err := clientcmd.WriteToFile(raw, filepath.Join(p.workDirPath, ".kcp/root.kubeconfig")); err != nil {
 		return err
 	}
 
 	// create serving cert
-	hostnames := sets.NewString("localhost", hostIP)
+	hostnames := sets.NewString("localhost", p.hostIP)
 	logger.Info("creating kcp-front-proxy serving cert with hostnames", "hostnames", hostnames)
-	cert, err := servingCA.MakeServerCert(hostnames, 365)
+	cert, err := p.servingCA.MakeServerCert(hostnames, 365)
 	if err != nil {
 		return fmt.Errorf("failed to create server cert: %w", err)
 	}
-	if err := cert.WriteCertConfigFile(filepath.Join(workDirPath, ".kcp-front-proxy/apiserver.crt"), filepath.Join(workDirPath, ".kcp-front-proxy/apiserver.key")); err != nil {
+	if err := cert.WriteCertConfigFile(filepath.Join(p.workDirPath, ".kcp-front-proxy/apiserver.crt"), filepath.Join(p.workDirPath, ".kcp-front-proxy/apiserver.key")); err != nil {
 		return fmt.Errorf("failed to write server cert: %w", err)
 	}
 
 	// run front-proxy command
 	commandLine := append(framework.DirectOrGoRunCommand("kcp-front-proxy"),
-		fmt.Sprintf("--mapping-file=%s", filepath.Join(workDirPath, ".kcp-front-proxy/mapping.yaml")),
-		fmt.Sprintf("--root-directory=%s", filepath.Join(workDirPath, ".kcp-front-proxy")),
-		fmt.Sprintf("--root-kubeconfig=%s", filepath.Join(workDirPath, ".kcp/root.kubeconfig")),
-		fmt.Sprintf("--shards-kubeconfig=%s", filepath.Join(workDirPath, ".kcp-front-proxy/shards.kubeconfig")),
-		fmt.Sprintf("--client-ca-file=%s", filepath.Join(workDirPath, ".kcp/client-ca.crt")),
-		fmt.Sprintf("--tls-cert-file=%s", filepath.Join(workDirPath, ".kcp-front-proxy/apiserver.crt")),
-		fmt.Sprintf("--tls-private-key-file=%s", filepath.Join(workDirPath, ".kcp-front-proxy/apiserver.key")),
+		fmt.Sprintf("--mapping-file=%s", filepath.Join(p.workDirPath, ".kcp-front-proxy/mapping.yaml")),
+		fmt.Sprintf("--root-directory=%s", filepath.Join(p.workDirPath, ".kcp-front-proxy")),
+		fmt.Sprintf("--root-kubeconfig=%s", filepath.Join(p.workDirPath, ".kcp/root.kubeconfig")),
+		fmt.Sprintf("--shards-kubeconfig=%s", filepath.Join(p.workDirPath, ".kcp-front-proxy/shards.kubeconfig")),
+		fmt.Sprintf("--client-ca-file=%s", filepath.Join(p.workDirPath, ".kcp/client-ca.crt")),
+		fmt.Sprintf("--tls-cert-file=%s", filepath.Join(p.workDirPath, ".kcp-front-proxy/apiserver.crt")),
+		fmt.Sprintf("--tls-private-key-file=%s", filepath.Join(p.workDirPath, ".kcp-front-proxy/apiserver.key")),
 		"--secure-port=6443",
 	)
-	commandLine = append(commandLine, args...)
+	commandLine = append(commandLine, p.args...)
 	fmt.Fprintf(out, "running: %v\n", strings.Join(commandLine, " "))
 
 	cmd := exec.CommandContext(ctx, commandLine[0], commandLine[1:]...)
 
-	logFilePath := filepath.Join(workDirPath, ".kcp-front-proxy/proxy.log")
-	if logDirPath != "" {
-		logFilePath = filepath.Join(logDirPath, "kcp-front-proxy.log")
+	logFilePath := filepath.Join(p.workDirPath, ".kcp-front-proxy/proxy.log")
+	if p.logDirPath != "" {
+		logFilePath = filepath.Join(p.logDirPath, "kcp-front-proxy.log")
 	}
 
 	logFile, err := os.OpenFile(logFilePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
@@ -150,10 +163,10 @@ func startFrontProxy(
 		return err
 	}
 
-	writer := helpers.NewHeadWriter(logFile, out)
-	cmd.Stdout = writer
+	p.writer = helpers.NewHeadWriter(logFile, out)
+	cmd.Stdout = p.writer
 	cmd.Stdin = os.Stdin
-	cmd.Stderr = writer
+	cmd.Stderr = p.writer
 
 	if err := cmd.Start(); err != nil {
 		return err
@@ -178,6 +191,13 @@ func startFrontProxy(
 		}
 	}()
 
+	return nil
+}
+
+func (p *FrontProxy) waitForReady(ctx context.Context) (<-chan error, error) {
+	// wait for readiness
+	logger := klog.FromContext(ctx)
+
 	// wait for readiness
 	logger.Info("waiting for kcp-front-proxy to be up")
 	for {
@@ -185,14 +205,14 @@ func startFrontProxy(
 
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("context canceled")
-		case rc := <-terminatedCh:
-			return fmt.Errorf("kcp-front-proxy terminated with exit code %d", rc)
+			return nil, fmt.Errorf("context canceled")
+		case rc := <-p.terminatedCh:
+			return nil, fmt.Errorf("kcp-front-proxy terminated with exit code %d", rc)
 		default:
 		}
 
 		// intentionally load again every iteration because it can change
-		configLoader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: filepath.Join(workDirPath, ".kcp/admin.kubeconfig")},
+		configLoader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: filepath.Join(p.workDirPath, ".kcp/admin.kubeconfig")},
 			&clientcmd.ConfigOverrides{CurrentContext: "base"},
 		)
 		config, err := configLoader.ClientConfig()
@@ -222,31 +242,37 @@ func startFrontProxy(
 		}
 	}
 	if !logger.V(3).Enabled() {
-		writer.StopOut()
+		logger.Info("SHDEBUG stopping")
+		p.writer.StopOut()
 	}
+	inverse := color.New(color.BgHiWhite, color.FgGreen).SprintFunc()
+	successOut := lineprefix.New(
+		lineprefix.Prefix(inverse(" PROXY ")),
+		lineprefix.Color(color.New(color.FgHiWhite)),
+	)
 	fmt.Fprintf(successOut, "kcp-front-proxy is ready\n")
 
-	return nil
+	return p.terminatedCh, nil
 }
 
-func writeAdminKubeConfig(hostIP string, workDirPath string) error {
-	baseHost := fmt.Sprintf("https://%s:6443", hostIP)
+func (p *FrontProxy) writeAdminKubeConfig() error {
+	baseHost := fmt.Sprintf("https://%s:6443", p.hostIP)
 
 	var kubeConfig clientcmdapi.Config
 	kubeConfig.AuthInfos = map[string]*clientcmdapi.AuthInfo{
 		"kcp-admin": {
-			ClientKey:         filepath.Join(workDirPath, ".kcp/kcp-admin.key"),
-			ClientCertificate: filepath.Join(workDirPath, ".kcp/kcp-admin.crt"),
+			ClientKey:         filepath.Join(p.workDirPath, ".kcp/kcp-admin.key"),
+			ClientCertificate: filepath.Join(p.workDirPath, ".kcp/kcp-admin.crt"),
 		},
 	}
 	kubeConfig.Clusters = map[string]*clientcmdapi.Cluster{
 		"root": {
 			Server:               baseHost + "/clusters/root",
-			CertificateAuthority: filepath.Join(workDirPath, ".kcp/serving-ca.crt"),
+			CertificateAuthority: filepath.Join(p.workDirPath, ".kcp/serving-ca.crt"),
 		},
 		"base": {
 			Server:               baseHost,
-			CertificateAuthority: filepath.Join(workDirPath, ".kcp/serving-ca.crt"),
+			CertificateAuthority: filepath.Join(p.workDirPath, ".kcp/serving-ca.crt"),
 		},
 	}
 	kubeConfig.Contexts = map[string]*clientcmdapi.Context{
@@ -259,7 +285,7 @@ func writeAdminKubeConfig(hostIP string, workDirPath string) error {
 		return err
 	}
 
-	return clientcmd.WriteToFile(kubeConfig, filepath.Join(workDirPath, ".kcp/admin.kubeconfig"))
+	return clientcmd.WriteToFile(kubeConfig, filepath.Join(p.workDirPath, ".kcp/admin.kubeconfig"))
 }
 
 func writeShardKubeConfig(workDirPath string) error {

@@ -194,6 +194,12 @@ func start(proxyFlags, shardFlags []string, logDirPath, workDirPath string, numb
 		shards = append(shards, shard)
 	}
 
+	// write kcp-admin kubeconfig talking to the front-proxy with a client-cert
+	proxy := NewFrontProxy(proxyFlags, servingCA, hostIP.String(), logDirPath, workDirPath)
+	if err := proxy.writeAdminKubeConfig(); err != nil {
+		return err
+	}
+
 	vwPort := "6444"
 	virtualWorkspacesErrCh := make(chan indexErrTuple)
 	if standaloneVW {
@@ -221,7 +227,7 @@ func start(proxyFlags, shardFlags []string, logDirPath, workDirPath string, numb
 		return err
 	}
 	// start front-proxy
-	if err := startFrontProxy(ctx, proxyFlags, servingCA, hostIP.String(), logDirPath, workDirPath, vwPort); err != nil {
+	if err := proxy.start(ctx, vwPort); err != nil {
 		return err
 	}
 
@@ -238,6 +244,17 @@ func start(proxyFlags, shardFlags []string, logDirPath, workDirPath string, numb
 		}(i, terminatedCh)
 	}
 
+	// Wait for the proxy to be ready
+	proxyErrCh := make(chan indexErrTuple)
+	proxyTerminatedCh, err := proxy.waitForReady(ctx)
+	if err != nil {
+		return err
+	}
+	go func() {
+		err := <-proxyTerminatedCh
+		proxyErrCh <- indexErrTuple{0, err}
+	}()
+
 	select {
 	case shardIndexErr := <-shardsErrCh:
 		return fmt.Errorf("shard %d exited: %w", shardIndexErr.index, shardIndexErr.error)
@@ -245,6 +262,8 @@ func start(proxyFlags, shardFlags []string, logDirPath, workDirPath string, numb
 		return fmt.Errorf("virtual workspaces %d exited: %w", vwIndexErr.index, vwIndexErr.error)
 	case cacheErr := <-cacheServerErrCh:
 		return fmt.Errorf("cache server exited: %w", cacheErr.error)
+	case proxyErr := <-proxyErrCh:
+		return fmt.Errorf("front proxy exited: %w", proxyErr.error)
 	case <-ctx.Done():
 	}
 	return nil
