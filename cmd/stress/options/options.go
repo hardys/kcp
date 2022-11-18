@@ -26,7 +26,7 @@ import (
 type Options struct {
 	QPS        float32
 	Burst      int
-	Iterations int
+	NumWorkspaces int
 	Timeout    int
 	Kubeconfig string
 	Context    string
@@ -40,7 +40,7 @@ func NewOptions() *Options {
 
 	return &Options{
 		Timeout:    60,
-		Iterations: 100,
+		NumWorkspaces: 100,
 		QPS:        -1,
 		Burst:      -1,
 		Kubeconfig: ".kcp/admin.kubeconfig",
@@ -52,7 +52,7 @@ func NewOptions() *Options {
 func (options *Options) AddFlags(fs *pflag.FlagSet) {
 	fs.Float32Var(&options.QPS, "qps", options.QPS, "QPS to use when talking to API servers.")
 	fs.IntVar(&options.Burst, "burst", options.Burst, "Burst to use when talking to API servers.")
-	fs.IntVar(&options.Iterations, "iterations", options.Iterations, "Iterations of the test to perform.")
+	fs.IntVar(&options.NumWorkspaces, "workspaces", options.NumWorkspaces, "Number of workspaces for the test to create.")
 	fs.IntVar(&options.Timeout, "timeout", options.Timeout, "Timeout for waits during the test (seconds).")
 	fs.StringVar(&options.Kubeconfig, "kubeconfig", options.Kubeconfig, "Kubeconfig file.")
 	fs.StringVar(&options.Context, "context", options.Context, "Context to use in the Kubeconfig file.")

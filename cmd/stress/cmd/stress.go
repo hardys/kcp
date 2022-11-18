@@ -109,7 +109,7 @@ func kcpClient(options *stressoptions.Options) (*kcpclient.Cluster, error) {
 	return kcpClusterClient, nil
 }
 
-// Create a workspace and wait for it to be ready
+// Create a workspace
 func createWorkspace(ctx context.Context, kcpClusterClient *kcpclient.Cluster, parent *tenancyv1beta1.Workspace, wsName string) (*tenancyv1beta1.Workspace, error) {
 	logger := klog.FromContext(ctx).WithValues("createWorkspace", wsName)
 	// Create the workspace
@@ -131,10 +131,11 @@ func createWorkspace(ctx context.Context, kcpClusterClient *kcpclient.Cluster, p
 	}
 	logger.WithValues("ws", ws.Name).Info("created workspace")
 
+	/* FIXME: Do we want the option to wait for each workspace or only list-wait as below?
 	// Wait for it to be ready
 	if ws.Status.Phase != tenancyv1alpha1.ClusterWorkspacePhaseReady {
 		logger.WithValues("phase", ws.Status.Phase).Info("phase not ready")
-		if err := wait.PollImmediate(time.Millisecond*100, time.Second*5, func() (bool, error) {
+		if err := wait.PollImmediate(time.Millisecond*500, time.Second*5, func() (bool, error) {
 			ws, err = kcpClusterClient.Cluster(currentClusterName).TenancyV1beta1().Workspaces().Get(ctx, ws.Name, metav1.GetOptions{})
 			if err != nil {
 				return false, err
@@ -150,8 +151,62 @@ func createWorkspace(ctx context.Context, kcpClusterClient *kcpclient.Cluster, p
 			return nil, err
 		}
 	}
-
+	*/
 	return ws, nil
+}
+
+// Wait for workspaces to be ready
+func waitForWorkspacesReady(ctx context.Context, kcpClusterClient *kcpclient.Cluster, parent *tenancyv1beta1.Workspace, expectedReady int) error {
+	logger := klog.FromContext(ctx).WithValues("wait", "ready")
+	// Wait for workspaces to be ready
+	_, currentClusterName, err := pluginhelpers.ParseClusterURL(parent.Status.URL)
+	if err != nil {
+		return fmt.Errorf("current URL %q does not point to cluster workspace", parent.Status.URL)
+	}
+
+	// FIXME: we can't select by phase=ready
+	// listOptions := metav1.ListOptions{ FieldSelector: "status.phase=Ready", }
+	list, err := kcpClusterClient.Cluster(currentClusterName).TenancyV1beta1().Workspaces().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		logger.Info("Error getting workspace list")
+		return err
+	}
+
+	numReady := 0
+	for _, ws := range(list.Items) {
+		if ws.Status.Phase == tenancyv1alpha1.ClusterWorkspacePhaseReady {
+			logger.WithValues("ws", ws.Name).WithValues("phase", ws.Status.Phase).Info("phase ready")
+			numReady += 1
+		}
+	}
+
+	if numReady != expectedReady {
+		logger.WithValues("len", len(list.Items)).Info("not yet deleted")
+		if err := wait.PollImmediate(time.Millisecond*500, time.Second*60, func() (bool, error) {
+			list, err = kcpClusterClient.Cluster(currentClusterName).TenancyV1beta1().Workspaces().List(ctx, metav1.ListOptions{})
+			if err != nil {
+				return false, err
+			}
+			numReady = 0
+			for _, ws := range(list.Items) {
+				if ws.Status.Phase == tenancyv1alpha1.ClusterWorkspacePhaseReady {
+					logger.WithValues("ws", ws.Name, "phase", ws.Status.Phase, "URL", ws.Status.URL).Info("phase ready")
+					numReady += 1
+				}
+			}
+
+			if numReady == expectedReady {
+				logger.WithValues("numReady", numReady).Info("all ready")
+				return true, nil
+			}
+			logger.WithValues("numReady", numReady).Info("ready waiting...")
+			return false, nil
+		}); err != nil {
+			logger.Error(err, "Error waiting for ready")
+		}
+	}
+	logger.Info("all ready")
+	return nil
 }
 
 // Delete a workspace
@@ -186,7 +241,7 @@ func waitWorkspaceDeletion(ctx context.Context, kcpClusterClient *kcpclient.Clus
 
 	if len(list.Items) != 0 {
 		logger.WithValues("len", len(list.Items)).Info("not yet deleted")
-		if err := wait.PollImmediate(time.Millisecond*100, time.Second*60, func() (bool, error) {
+		if err := wait.PollImmediate(time.Millisecond*500, time.Second*60, func() (bool, error) {
 			list, err = kcpClusterClient.Cluster(currentClusterName).TenancyV1beta1().Workspaces().List(ctx, metav1.ListOptions{})
 			if err != nil {
 				return false, err
@@ -203,6 +258,42 @@ func waitWorkspaceDeletion(ctx context.Context, kcpClusterClient *kcpclient.Clus
 	}
 	logger.Info("all deleted")
 	return nil
+}
+
+// Wait for a single workspace to be ready
+func waitForWorkspaceReady(ctx context.Context, kcpClusterClient *kcpclient.Cluster, parent *tenancyv1beta1.Workspace, wsName string) (*tenancyv1beta1.Workspace, error) {
+	logger := klog.FromContext(ctx).WithValues("wait", "workspace")
+
+	_, currentClusterName, err := pluginhelpers.ParseClusterURL(parent.Status.URL)
+	if err != nil {
+		return nil, fmt.Errorf("current URL %q does not point to cluster workspace", parent.Status.URL)
+	}
+
+	ws, err := kcpClusterClient.Cluster(currentClusterName).TenancyV1beta1().Workspaces().Get(ctx, wsName, metav1.GetOptions{})
+	if err != nil {
+		logger.Info("Error getting workspace")
+		return nil, err
+	}
+
+	if ws.Status.Phase != tenancyv1alpha1.ClusterWorkspacePhaseReady {
+		if err := wait.PollImmediate(time.Millisecond*500, time.Second*60, func() (bool, error) {
+			ws, err = kcpClusterClient.Cluster(currentClusterName).TenancyV1beta1().Workspaces().Get(ctx, wsName, metav1.GetOptions{})
+			if err != nil {
+				return false, err
+			}
+			if ws.Status.Phase == tenancyv1alpha1.ClusterWorkspacePhaseReady {
+				logger.WithValues("ws", ws.Name).Info("phase ready")
+				return true, nil
+			}
+			logger.WithValues("ws", ws.Name).Info("ready waiting...")
+			return false, nil
+		}); err != nil {
+			logger.Error(err, "Error waiting for ready")
+		}
+	}
+
+	logger.WithValues("ws", ws.Name).Info("Workspace ready")
+	return ws, nil
 }
 
 func workspaceCRUD(ctx context.Context, options *stressoptions.Options) error {
@@ -230,9 +321,17 @@ func workspaceCRUD(ctx context.Context, options *stressoptions.Options) error {
 	}
 	logger.WithValues("ws", ws.Name).Info("created workspace")
 
+	// Wait for the test workspace to become ready
+	ws, err = waitForWorkspaceReady(ctx, kcpClusterClient, home, wsName)
+	if err != nil {
+		logger.Info("Error waiting for ready")
+		return err
+	}
+
 	// Create Workspaces in the test workspace
+	createStart := time.Now()
 	count := 0
-	for count < options.Iterations {
+	for count < options.NumWorkspaces {
 		count += 1
 		twsName := fmt.Sprintf("%s-%d", wsName, count)
 		tws, err := createWorkspace(ctx, kcpClusterClient, ws, twsName)
@@ -243,7 +342,16 @@ func workspaceCRUD(ctx context.Context, options *stressoptions.Options) error {
 		logger.WithValues("tws", tws.Name).Info("created nested workspace")
 	}
 
+	// Wait for all created workspaces to become ready
+	err = waitForWorkspacesReady(ctx, kcpClusterClient, ws, options.NumWorkspaces)
+	if err != nil {
+		logger.Info("Error waiting for ready")
+		return err
+	}
+	createElapsed := time.Since(createStart)
+
 	// Delete workspaces
+	deleteStart := time.Now()
 	for count > 0 {
 		twsName := fmt.Sprintf("%s-%d", wsName, count)
 		err := deleteWorkspace(ctx, kcpClusterClient, ws, twsName)
@@ -260,7 +368,8 @@ func workspaceCRUD(ctx context.Context, options *stressoptions.Options) error {
 		logger.Info("Error waiting for deletion")
 		return err
 	}
+	deleteElapsed := time.Since(deleteStart)
 
-	logger.Info("done")
+	logger.WithValues("workspaces", options.NumWorkspaces, "created", createElapsed, "deleted", deleteElapsed).Info("completed")
 	return nil
 }

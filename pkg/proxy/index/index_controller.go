@@ -295,6 +295,7 @@ func (c *Controller) Lookup(logicalCluster logicalcluster.Name) (string, bool) {
 	defer c.lock.RUnlock()
 
 	shardName, found := c.workspaceShardNames[logicalCluster]
+	klog.Infof("SHDEBUG got shardName %s for logicalCluster %s", shardName, logicalCluster)
 	if !found {
 		return "", false
 	}
