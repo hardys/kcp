@@ -209,6 +209,10 @@ func newKcpFixture(t *testing.T, cfgs ...kcpConfig) *kcpFixture {
 		err := srv.Run(opts...)
 		require.NoError(t, err)
 
+		if cfgs[i].SkipReadyCheck {
+			wg.Done()
+			continue
+		}
 		// Wait for the server to become ready
 		go func(s *kcpServer, i int) {
 			defer wg.Done()
@@ -248,6 +252,7 @@ type RunningServer interface {
 	BaseConfig(t *testing.T) *rest.Config
 	RootShardSystemMasterBaseConfig(t *testing.T) *rest.Config
 	Artifact(t *testing.T, producer func() (runtime.Object, error))
+	Ready(keepMonitoring bool) error
 }
 
 // KcpConfigOption a function that wish to modify a given kcp configuration.
@@ -279,8 +284,9 @@ type kcpConfig struct {
 	ArtifactDir string
 	DataDir     string
 
-	LogToConsole bool
-	RunInProcess bool
+	LogToConsole   bool
+	RunInProcess   bool
+	SkipReadyCheck bool
 }
 
 // kcpServer exposes a kcp invocation to a test and
@@ -299,7 +305,8 @@ type kcpServer struct {
 	cfg            clientcmd.ClientConfig
 	kubeconfigPath string
 
-	t *testing.T
+	t          *testing.T
+	listenPort string
 }
 
 func newKcpServer(t *testing.T, cfg kcpConfig, artifactDir, dataDir string) (*kcpServer, error) {
@@ -345,7 +352,12 @@ func newKcpServer(t *testing.T, cfg kcpConfig, artifactDir, dataDir string) (*kc
 		artifactDir: artifactDir,
 		t:           t,
 		lock:        &sync.Mutex{},
+		listenPort:  kcpListenPort,
 	}, nil
+}
+
+func (c *kcpServer) ListenPort() string {
+	return c.listenPort
 }
 
 type runOptions struct {
@@ -953,6 +965,10 @@ func (s *unmanagedKCPServer) RootShardSystemMasterBaseConfig(t *testing.T) *rest
 func (s *unmanagedKCPServer) Artifact(t *testing.T, producer func() (runtime.Object, error)) {
 	t.Helper()
 	artifact(t, s, producer)
+}
+
+func (s *unmanagedKCPServer) Ready(keepMonitoring bool) error {
+	return nil
 }
 
 func NoGoRunEnvSet() bool {
