@@ -56,7 +56,12 @@ func TestSyncerTunnel(t *testing.T) {
 
 	defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.SyncerTunnel, true)()
 
-	upstreamServer := framework.PrivateKcpServer(t)
+	artifactDir, dataDir, err := framework.ScratchDirs(t)
+	require.NoError(t, err)
+
+	upstreamServer := framework.PrivateKcpServer(t,
+		framework.PrivateWithScratchDirectories(artifactDir, dataDir),
+	)
 	t.Log("Creating an organization")
 	orgClusterName := framework.NewOrganizationFixture(t, upstreamServer)
 	t.Log("Creating a workspace")

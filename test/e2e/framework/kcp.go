@@ -94,25 +94,39 @@ type kcpFixture struct {
 
 // PrivateKcpServer returns a new kcp server fixture managing a new
 // server process that is not intended to be shared between tests.
-func PrivateKcpServer(t *testing.T, options ...KcpConfigOption) RunningServer {
+func PrivateKcpServer(t *testing.T, opts ...PrivateKcpServerOption) RunningServer {
 	t.Helper()
-
 	serverName := "main"
 
 	cfg := &kcpConfig{Name: serverName}
-	for _, opt := range options {
-		cfg = opt(cfg)
-	}
-
-	if len(cfg.ArtifactDir) == 0 || len(cfg.DataDir) == 0 {
-		artifactDir, dataDir, err := ScratchDirs(t)
-		require.NoError(t, err, "failed to create scratch dirs: %v", err)
-		cfg.ArtifactDir = artifactDir
-		cfg.DataDir = dataDir
+	for _, opt := range opts {
+		opt(cfg)
 	}
 
 	f := newKcpFixture(t, *cfg)
 	return f.Servers[serverName]
+}
+
+type PrivateKcpServerOption func(c *kcpConfig)
+
+func PrivateKcpServerArgs(args ...string) PrivateKcpServerOption {
+	return func(c *kcpConfig) {
+		c.Args = args
+	}
+}
+
+func PrivateKcpServerSkipReadyCheck(skip bool) PrivateKcpServerOption {
+	return func(c *kcpConfig) {
+		c.SkipReadyCheck = skip
+	}
+}
+
+// PrivateWithScratchDirectories adds custom scratch directories to a kcp configuration.
+func PrivateWithScratchDirectories(artifactDir, dataDir string) PrivateKcpServerOption {
+	return func(c *kcpConfig) {
+		c.ArtifactDir = artifactDir
+		c.DataDir = dataDir
+	}
 }
 
 // SharedKcpServer returns a kcp server fixture intended to be shared

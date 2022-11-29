@@ -162,12 +162,17 @@ func TestWorkspaceController(t *testing.T) {
 			ctx, cancelFunc := context.WithCancel(context.Background())
 			t.Cleanup(cancelFunc)
 
+			artifactDir, dataDir, err := framework.ScratchDirs(t)
+			require.NoError(t, err)
+
 			server := sharedServer
 			if testCase.destructive {
 				// Destructive tests require their own server
 				//
 				// TODO(marun) Could the testing currently requiring destructive e2e be performed with less cost?
-				server = framework.PrivateKcpServer(t)
+				server = framework.PrivateKcpServer(t,
+					framework.PrivateWithScratchDirectories(artifactDir, dataDir),
+				)
 			}
 
 			cfg := server.BaseConfig(t)

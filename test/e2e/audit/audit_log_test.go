@@ -36,7 +36,16 @@ func TestAuditLogs(t *testing.T) {
 	t.Parallel()
 	framework.Suite(t, "control-plane")
 
-	server := framework.PrivateKcpServer(t, framework.WithCustomArguments([]string{"--audit-log-path", "./audit-log", "--audit-policy-file", "./policy.yaml"}...))
+	artifactDir, dataDir, err := framework.ScratchDirs(t)
+	require.NoError(t, err)
+
+	server := framework.PrivateKcpServer(t,
+		framework.PrivateKcpServerArgs(
+			"--audit-log-path", "./audit-log",
+			"--audit-policy-file", "./policy.yaml",
+		),
+		framework.PrivateWithScratchDirectories(artifactDir, dataDir),
+	)
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
