@@ -350,6 +350,11 @@ func workspaceCRUD(ctx context.Context, options *stressoptions.Options) error {
 	}
 	createElapsed := time.Since(createStart)
 
+	if options.NoDelete {
+		logger.WithValues("workspaces", options.NumWorkspaces, "created", createElapsed).Info("completed")
+		return nil
+	}
+
 	// Delete workspaces
 	deleteStart := time.Now()
 	for count > 0 {

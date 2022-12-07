@@ -31,6 +31,7 @@ type Options struct {
 	Kubeconfig string
 	Context    string
 	Logs       *logs.Options
+	NoDelete   bool
 }
 
 func NewOptions() *Options {
@@ -46,6 +47,7 @@ func NewOptions() *Options {
 		Kubeconfig: ".kcp/admin.kubeconfig",
 		Context:    "base",
 		Logs:       logs,
+		NoDelete:   false,
 	}
 }
 
@@ -56,6 +58,7 @@ func (options *Options) AddFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&options.Timeout, "timeout", options.Timeout, "Timeout for waits during the test (seconds).")
 	fs.StringVar(&options.Kubeconfig, "kubeconfig", options.Kubeconfig, "Kubeconfig file.")
 	fs.StringVar(&options.Context, "context", options.Context, "Context to use in the Kubeconfig file.")
+	fs.BoolVar(&options.NoDelete, "no-delete", options.NoDelete, "Do not delete created resources.")
 	options.Logs.AddFlags(fs)
 }
 
