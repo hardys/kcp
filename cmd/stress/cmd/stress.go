@@ -36,7 +36,7 @@ import (
 	tenancyv1beta1 "github.com/kcp-dev/kcp/pkg/apis/tenancy/v1beta1"
 
 	stressoptions "github.com/kcp-dev/kcp/cmd/stress/options"
-	kcpclient "github.com/kcp-dev/kcp/pkg/client/clientset/versioned"
+	kcpclientset "github.com/kcp-dev/kcp/pkg/client/clientset/versioned/cluster"
 
 	pluginhelpers "github.com/kcp-dev/kcp/pkg/cliplugins/helpers"
 )
@@ -87,7 +87,7 @@ func Run(ctx context.Context, options *stressoptions.Options) error {
 	return nil
 }
 
-func kcpClient(options *stressoptions.Options) (*kcpclient.Cluster, error) {
+func kcpClient(options *stressoptions.Options) (*kcpclientset.ClusterClientset, error) {
 	kcpConfigOverrides := &clientcmd.ConfigOverrides{
 		CurrentContext: options.Context,
 	}
@@ -101,7 +101,7 @@ func kcpClient(options *stressoptions.Options) (*kcpclient.Cluster, error) {
 	config.QPS = options.QPS
 	config.Burst = options.Burst
 
-	kcpClusterClient, err := kcpclient.NewClusterForConfig(rest.CopyConfig(config))
+	kcpClusterClient, err := kcpclientset.NewForConfig(rest.CopyConfig(config))
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func kcpClient(options *stressoptions.Options) (*kcpclient.Cluster, error) {
 }
 
 // Create a workspace
-func createWorkspace(ctx context.Context, kcpClusterClient *kcpclient.Cluster, parent *tenancyv1beta1.Workspace, wsName string) (*tenancyv1beta1.Workspace, error) {
+func createWorkspace(ctx context.Context, kcpClusterClient *kcpclientset.ClusterClientset, parent *tenancyv1beta1.Workspace, wsName string) (*tenancyv1beta1.Workspace, error) {
 	logger := klog.FromContext(ctx).WithValues("createWorkspace", wsName)
 	// Create the workspace
 	_, currentClusterName, err := pluginhelpers.ParseClusterURL(parent.Status.URL)
@@ -156,7 +156,7 @@ func createWorkspace(ctx context.Context, kcpClusterClient *kcpclient.Cluster, p
 }
 
 // Wait for workspaces to be ready
-func waitForWorkspacesReady(ctx context.Context, kcpClusterClient *kcpclient.Cluster, parent *tenancyv1beta1.Workspace, expectedReady int) error {
+func waitForWorkspacesReady(ctx context.Context, kcpClusterClient *kcpclientset.ClusterClientset, parent *tenancyv1beta1.Workspace, expectedReady int) error {
 	logger := klog.FromContext(ctx).WithValues("wait", "ready")
 	// Wait for workspaces to be ready
 	_, currentClusterName, err := pluginhelpers.ParseClusterURL(parent.Status.URL)
@@ -210,7 +210,7 @@ func waitForWorkspacesReady(ctx context.Context, kcpClusterClient *kcpclient.Clu
 }
 
 // Delete a workspace
-func deleteWorkspace(ctx context.Context, kcpClusterClient *kcpclient.Cluster, parent *tenancyv1beta1.Workspace, wsName string) error {
+func deleteWorkspace(ctx context.Context, kcpClusterClient *kcpclientset.ClusterClientset, parent *tenancyv1beta1.Workspace, wsName string) error {
 	logger := klog.FromContext(ctx).WithValues("deleteWorkspace", wsName)
 	// Delete the workspace
 	_, currentClusterName, err := pluginhelpers.ParseClusterURL(parent.Status.URL)
@@ -227,7 +227,7 @@ func deleteWorkspace(ctx context.Context, kcpClusterClient *kcpclient.Cluster, p
 }
 
 // Wait for zero workspaces
-func waitWorkspaceDeletion(ctx context.Context, kcpClusterClient *kcpclient.Cluster, parent *tenancyv1beta1.Workspace) error {
+func waitWorkspaceDeletion(ctx context.Context, kcpClusterClient *kcpclientset.ClusterClientset, parent *tenancyv1beta1.Workspace) error {
 	logger := klog.FromContext(ctx).WithValues("wait", "Deleted Workspaces")
 	_, currentClusterName, err := pluginhelpers.ParseClusterURL(parent.Status.URL)
 	if err != nil {
@@ -261,7 +261,7 @@ func waitWorkspaceDeletion(ctx context.Context, kcpClusterClient *kcpclient.Clus
 }
 
 // Wait for a single workspace to be ready
-func waitForWorkspaceReady(ctx context.Context, kcpClusterClient *kcpclient.Cluster, parent *tenancyv1beta1.Workspace, wsName string) (*tenancyv1beta1.Workspace, error) {
+func waitForWorkspaceReady(ctx context.Context, kcpClusterClient *kcpclientset.ClusterClientset, parent *tenancyv1beta1.Workspace, wsName string) (*tenancyv1beta1.Workspace, error) {
 	logger := klog.FromContext(ctx).WithValues("wait", "workspace")
 
 	_, currentClusterName, err := pluginhelpers.ParseClusterURL(parent.Status.URL)
