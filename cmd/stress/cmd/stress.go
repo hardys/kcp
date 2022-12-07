@@ -328,53 +328,57 @@ func workspaceCRUD(ctx context.Context, options *stressoptions.Options) error {
 		return err
 	}
 
-	// Create Workspaces in the test workspace
-	createStart := time.Now()
-	count := 0
-	for count < options.NumWorkspaces {
-		count += 1
-		twsName := fmt.Sprintf("%s-%d", wsName, count)
-		tws, err := createWorkspace(ctx, kcpClusterClient, ws, twsName)
+	iteration := 0
+	for iteration < options.Iterations {
+		// Create Workspaces in the test workspace
+		createStart := time.Now()
+		count := 0
+		for count < options.NumWorkspaces {
+			count += 1
+			twsName := fmt.Sprintf("%s-%d-%d", wsName, iteration, count)
+			tws, err := createWorkspace(ctx, kcpClusterClient, ws, twsName)
+			if err != nil {
+				logger.Info("Error creating nested workspace")
+				return err
+			}
+			logger.WithValues("tws", tws.Name).Info("created nested workspace")
+		}
+	
+		// Wait for all created workspaces to become ready
+		err = waitForWorkspacesReady(ctx, kcpClusterClient, ws, options.NumWorkspaces)
 		if err != nil {
-			logger.Info("Error creating nested workspace")
+			logger.Info("Error waiting for ready")
 			return err
 		}
-		logger.WithValues("tws", tws.Name).Info("created nested workspace")
-	}
-
-	// Wait for all created workspaces to become ready
-	err = waitForWorkspacesReady(ctx, kcpClusterClient, ws, options.NumWorkspaces)
-	if err != nil {
-		logger.Info("Error waiting for ready")
-		return err
-	}
-	createElapsed := time.Since(createStart)
-
-	if options.NoDelete {
-		logger.WithValues("workspaces", options.NumWorkspaces, "created", createElapsed).Info("completed")
-		return nil
-	}
-
-	// Delete workspaces
-	deleteStart := time.Now()
-	for count > 0 {
-		twsName := fmt.Sprintf("%s-%d", wsName, count)
-		err := deleteWorkspace(ctx, kcpClusterClient, ws, twsName)
+		createElapsed := time.Since(createStart)
+	
+		if options.NoDelete {
+			logger.WithValues("workspaces", options.NumWorkspaces, "created", createElapsed, "iteration", iteration).Info("completed")
+			return nil
+		}
+	
+		// Delete workspaces
+		deleteStart := time.Now()
+		for count > 0 {
+			twsName := fmt.Sprintf("%s-%d-%d", wsName, iteration, count)
+			err := deleteWorkspace(ctx, kcpClusterClient, ws, twsName)
+			if err != nil {
+				logger.Info("Error deleting nested workspace")
+				return err
+			}
+			count -= 1
+		}
+	
+		// Confirm deletion
+		err = waitWorkspaceDeletion(ctx, kcpClusterClient, ws)
 		if err != nil {
-			logger.Info("Error deleting nested workspace")
+			logger.Info("Error waiting for deletion")
 			return err
 		}
-		count -= 1
+		deleteElapsed := time.Since(deleteStart)
+	
+		logger.WithValues("workspaces", options.NumWorkspaces, "created", createElapsed, "deleted", deleteElapsed, "iteration", iteration).Info("completed")
+		iteration += 1
 	}
-
-	// Confirm deletion
-	err = waitWorkspaceDeletion(ctx, kcpClusterClient, ws)
-	if err != nil {
-		logger.Info("Error waiting for deletion")
-		return err
-	}
-	deleteElapsed := time.Since(deleteStart)
-
-	logger.WithValues("workspaces", options.NumWorkspaces, "created", createElapsed, "deleted", deleteElapsed).Info("completed")
 	return nil
 }

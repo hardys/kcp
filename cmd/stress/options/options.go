@@ -32,6 +32,7 @@ type Options struct {
 	Context    string
 	Logs       *logs.Options
 	NoDelete   bool
+	Iterations int
 }
 
 func NewOptions() *Options {
@@ -48,12 +49,14 @@ func NewOptions() *Options {
 		Context:    "base",
 		Logs:       logs,
 		NoDelete:   false,
+		Iterations: 1,
 	}
 }
 
 func (options *Options) AddFlags(fs *pflag.FlagSet) {
 	fs.Float32Var(&options.QPS, "qps", options.QPS, "QPS to use when talking to API servers.")
 	fs.IntVar(&options.Burst, "burst", options.Burst, "Burst to use when talking to API servers.")
+	fs.IntVar(&options.Iterations, "iterations", options.Iterations, "Number of iterations.")
 	fs.IntVar(&options.NumWorkspaces, "workspaces", options.NumWorkspaces, "Number of workspaces for the test to create.")
 	fs.IntVar(&options.Timeout, "timeout", options.Timeout, "Timeout for waits during the test (seconds).")
 	fs.StringVar(&options.Kubeconfig, "kubeconfig", options.Kubeconfig, "Kubeconfig file.")
