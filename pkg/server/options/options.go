@@ -60,6 +60,7 @@ type ExtraOptions struct {
 	RootShardKubeconfigFile       string
 	ShardBaseURL                  string
 	ShardExternalURL              string
+	ShardServiceURL               string
 	ShardName                     string
 	ShardVirtualWorkspaceURL      string
 	DiscoveryPollInterval         time.Duration
@@ -106,6 +107,7 @@ func NewOptions(rootDir string) *Options {
 			ShardKubeconfigFile:      "",
 			ShardBaseURL:             "",
 			ShardExternalURL:         "",
+			ShardServiceURL:          "",
 			ShardName:                "root",
 			DiscoveryPollInterval:    60 * time.Second,
 			ExperimentalBindFreePort: false,
@@ -172,6 +174,7 @@ func (o *Options) rawFlags() cliflag.NamedFlagSets {
 	fs.StringVar(&o.Extra.RootShardKubeconfigFile, "root-shard-kubeconfig-file", o.Extra.RootShardKubeconfigFile, "Kubeconfig holding admin(!) credentials to the root kcp shard.")
 	fs.StringVar(&o.Extra.ShardBaseURL, "shard-base-url", o.Extra.ShardBaseURL, "Base URL to this kcp shard. Defaults to external address.")
 	fs.StringVar(&o.Extra.ShardExternalURL, "shard-external-url", o.Extra.ShardExternalURL, "URL used by outside clients to talk to this kcp shard. Defaults to external address.")
+	fs.StringVar(&o.Extra.ShardServiceURL, "shard-service-url", o.Extra.ShardServiceURL, "URL used by internal clients to talk to this kcp shard. Defaults to external address.")
 	fs.StringVar(&o.Extra.ShardName, "shard-name", o.Extra.ShardName, "A name of this kcp shard. Defaults to the \"root\" name.")
 	fs.StringVar(&o.Extra.ShardVirtualWorkspaceURL, "shard-virtual-workspace-url", o.Extra.ShardVirtualWorkspaceURL, "An external URL address of a virtual workspace server associated with this shard. Defaults to shard's base address.")
 	fs.StringVar(&o.Extra.RootDirectory, "root-directory", o.Extra.RootDirectory, "Root directory.")

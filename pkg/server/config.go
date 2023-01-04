@@ -111,6 +111,7 @@ type ExtraConfig struct {
 	// URL getters depending on genericspiserver.ExternalAddress which is initialized on server run
 	ShardBaseURL             func() string
 	ShardExternalURL         func() string
+	ShardServiceURL          func() string
 	ShardVirtualWorkspaceURL func() string
 
 	// informers
@@ -419,6 +420,12 @@ func NewConfig(opts *kcpserveroptions.CompletedOptions) (*Config, error) {
 	c.ShardExternalURL = func() string {
 		if opts.Extra.ShardExternalURL != "" {
 			return opts.Extra.ShardExternalURL
+		}
+		return "https://" + c.GenericConfig.ExternalAddress
+	}
+	c.ShardServiceURL = func() string {
+		if opts.Extra.ShardServiceURL != "" {
+			return opts.Extra.ShardServiceURL
 		}
 		return "https://" + c.GenericConfig.ExternalAddress
 	}

@@ -278,7 +278,10 @@ func (s *Server) Run(ctx context.Context) error {
 				},
 			},
 			Spec: corev1alpha1.ShardSpec{
-				BaseURL:             s.CompletedConfig.ShardBaseURL(),
+				// We use ShardServiceURL so that this can be set to a service endpoint for
+				// proxy->shard traffic, whereas ShardBaseURL may use an endpoint only accessible
+				// locally, which isn't gated by readiness probes e.g POD_IP
+				BaseURL:             s.CompletedConfig.ShardServiceURL(),
 				ExternalURL:         s.CompletedConfig.ShardExternalURL(),
 				VirtualWorkspaceURL: s.CompletedConfig.ShardVirtualWorkspaceURL(),
 			},

@@ -132,6 +132,7 @@ var (
 		"profiler-address",                 // [Address]:port to bind the profiler to
 		"root-directory",                   // Root directory.
 		"shard-base-url",                   // Base URL to this kcp shard. Defaults to external address.
+		"shard-service-url",                // Internal service URL for this kcp shard. Defaults to external address.
 		"shard-external-url",               // URL used by outside clients to talk to this kcp shard. Defaults to external address.
 		"shard-virtual-workspace-url",      // An external URL address of a virtual workspace server associated with this shard. Defaults to shard's base address.
 		"shard-name",                       // A name of this kcp shard.
