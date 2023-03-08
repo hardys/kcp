@@ -312,7 +312,7 @@ func writeShardKubeConfig(workDirPath string) error {
 }
 
 func writeLogicalClusterAdminKubeConfig(hostIP, workDirPath string) error {
-	baseHost := fmt.Sprintf("https://%s", net.JoinHostPort(hostIP, "6443"))
+	baseHost := fmt.Sprintf("https://%s", net.JoinHostPort(hostIP, "6444"))
 
 	var kubeConfig clientcmdapi.Config
 	kubeConfig.AuthInfos = map[string]*clientcmdapi.AuthInfo{
@@ -337,4 +337,32 @@ func writeLogicalClusterAdminKubeConfig(hostIP, workDirPath string) error {
 	}
 
 	return clientcmd.WriteToFile(kubeConfig, filepath.Join(workDirPath, ".kcp/logical-cluster-admin.kubeconfig"))
+}
+
+func writeExternalLogicalClusterAdminKubeConfig(hostIP, workDirPath string) error {
+	baseHost := fmt.Sprintf("https://%s", net.JoinHostPort(hostIP, "6443"))
+
+	var kubeConfig clientcmdapi.Config
+	kubeConfig.AuthInfos = map[string]*clientcmdapi.AuthInfo{
+		"external-logical-cluster-admin": {
+			ClientKey:         filepath.Join(workDirPath, ".kcp/external-logical-cluster-admin.key"),
+			ClientCertificate: filepath.Join(workDirPath, ".kcp/external-logical-cluster-admin.crt"),
+		},
+	}
+	kubeConfig.Clusters = map[string]*clientcmdapi.Cluster{
+		"base": {
+			Server:               baseHost,
+			CertificateAuthority: filepath.Join(workDirPath, ".kcp/serving-ca.crt"),
+		},
+	}
+	kubeConfig.Contexts = map[string]*clientcmdapi.Context{
+		"base": {Cluster: "base", AuthInfo: "external-logical-cluster-admin"},
+	}
+	kubeConfig.CurrentContext = "base"
+
+	if err := clientcmdapi.FlattenConfig(&kubeConfig); err != nil {
+		return err
+	}
+
+	return clientcmd.WriteToFile(kubeConfig, filepath.Join(workDirPath, ".kcp/external-logical-cluster-admin.kubeconfig"))
 }

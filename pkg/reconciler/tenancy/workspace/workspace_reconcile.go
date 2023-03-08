@@ -97,14 +97,21 @@ func (c *Controller) reconcile(ctx context.Context, ws *tenancyv1alpha1.Workspac
 		return indexers.ByPathAndName[*tenancyv1alpha1.WorkspaceType](tenancyv1alpha1.Resource("workspacetypes"), c.globalWorkspaceTypeIndexer, path, name)
 	}
 
+	// create external client that goes through the front-proxy
+	externalConfig := restclient.CopyConfig(c.externalLogicalClusterAdminConfig)
+	kcpExternalClient, err := kcpclientset.NewForConfig(externalConfig)
+	if err != nil {
+		return false, fmt.Errorf("failed to create external kcp client: %w", err)
+	}
+
 	reconcilers := []reconciler{
 		&metaDataReconciler{},
 		&deletionReconciler{
 			getLogicalCluster: func(ctx context.Context, cluster logicalcluster.Path) (*corev1alpha1.LogicalCluster, error) {
-				return c.kcpExternalClient.Cluster(cluster).CoreV1alpha1().LogicalClusters().Get(ctx, corev1alpha1.LogicalClusterName, metav1.GetOptions{})
+				return kcpExternalClient.Cluster(cluster).CoreV1alpha1().LogicalClusters().Get(ctx, corev1alpha1.LogicalClusterName, metav1.GetOptions{})
 			},
 			deleteLogicalCluster: func(ctx context.Context, cluster logicalcluster.Path) error {
-				return c.kcpExternalClient.Cluster(cluster).CoreV1alpha1().LogicalClusters().Delete(ctx, corev1alpha1.LogicalClusterName, metav1.DeleteOptions{})
+				return kcpExternalClient.Cluster(cluster).CoreV1alpha1().LogicalClusters().Delete(ctx, corev1alpha1.LogicalClusterName, metav1.DeleteOptions{})
 			},
 		},
 		&schedulingReconciler{
@@ -124,7 +131,7 @@ func (c *Controller) reconcile(ctx context.Context, ws *tenancyv1alpha1.Workspac
 		},
 		&phaseReconciler{
 			getLogicalCluster: func(ctx context.Context, cluster logicalcluster.Path) (*corev1alpha1.LogicalCluster, error) {
-				return c.kcpExternalClient.Cluster(cluster).CoreV1alpha1().LogicalClusters().Get(ctx, corev1alpha1.LogicalClusterName, metav1.GetOptions{})
+				return kcpExternalClient.Cluster(cluster).CoreV1alpha1().LogicalClusters().Get(ctx, corev1alpha1.LogicalClusterName, metav1.GetOptions{})
 			},
 			requeueAfter: func(workspace *tenancyv1alpha1.Workspace, after time.Duration) {
 				c.queue.AddAfter(kcpcache.ToClusterAwareKey(logicalcluster.From(workspace).String(), "", workspace.Name), after)

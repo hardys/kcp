@@ -39,6 +39,9 @@ const (
 	// This group allows it to skip the entire authorization stack except the bootstrap policy authorizer.
 	// Otherwise, the requests would be rejected because the LogicalCluster resource does not exist yet.
 	SystemLogicalClusterAdmin = "system:kcp:logical-cluster-admin"
+	// SystemExternalLogicalClusterAdmin is a group used by the scheduler to manage LogicalCluster resources.
+	// after creation via the external endpoint - this group can only get/update.
+	SystemExternalLogicalClusterAdmin = "system:kcp:external-logical-cluster-admin"
 	// SystemKcpWorkspaceAccessGroup is a group that gives a user system:authenticated access to a workspace.
 	SystemKcpWorkspaceAccessGroup = "system:kcp:workspace:access"
 )
@@ -49,6 +52,7 @@ func clusterRoleBindings() []rbacv1.ClusterRoleBinding {
 		clusterRoleBindingCustomName(rbacv1helpers.NewClusterBinding("cluster-admin").Groups(SystemKcpAdminGroup).BindingOrDie(), "system:kcp:admin:cluster-admin"),
 		clusterRoleBindingCustomName(rbacv1helpers.NewClusterBinding(SystemKcpWorkspaceBootstrapper).Groups(SystemKcpWorkspaceBootstrapper, "apis.kcp.io:binding:"+SystemKcpWorkspaceBootstrapper).BindingOrDie(), SystemKcpWorkspaceBootstrapper),
 		clusterRoleBindingCustomName(rbacv1helpers.NewClusterBinding(SystemLogicalClusterAdmin).Groups(SystemLogicalClusterAdmin).BindingOrDie(), SystemLogicalClusterAdmin),
+		clusterRoleBindingCustomName(rbacv1helpers.NewClusterBinding(SystemExternalLogicalClusterAdmin).Groups(SystemExternalLogicalClusterAdmin).BindingOrDie(), SystemExternalLogicalClusterAdmin),
 	}
 }
 
@@ -74,6 +78,12 @@ func clusterRoles() []rbacv1.ClusterRole {
 			Rules: []rbacv1.PolicyRule{
 				rbacv1helpers.NewRule("*").Groups(core.GroupName).Resources("logicalclusters", "logicalclusters/status").RuleOrDie(),
 				rbacv1helpers.NewRule("delete", "update", "get").Groups(tenancy.GroupName).Resources("workspaces").RuleOrDie(),
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: SystemExternalLogicalClusterAdmin},
+			Rules: []rbacv1.PolicyRule{
+				rbacv1helpers.NewRule("update", "get").Groups(core.GroupName).Resources("logicalclusters", "logicalclusters/status").RuleOrDie(),
 			},
 		},
 		{
